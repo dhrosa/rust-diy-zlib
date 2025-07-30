@@ -21,6 +21,8 @@ enum InflateError {
     InvalidCompressionInfo(u8),
     InvalidCompressionMethod(u8),
     FlagCheckMismatch(u16),
+    UnimplementedBlockType(u8),
+    LengthComplementMismatch(u16, u16),
 }
 
 impl From<io::Error> for InflateError {
@@ -38,6 +40,12 @@ impl fmt::Display for InflateError {
             InvalidCompressionInfo(i) => write!(f, "Invalid compression info value: {}", i),
             InvalidCompressionMethod(m) => write!(f, "Invalid compression method: {}", m),
             FlagCheckMismatch(c) => write!(f, "Flag checksum is not a multiple of 31: {}", c),
+            UnimplementedBlockType(b) => write!(f, "Unimplemented block type: {}", b),
+            LengthComplementMismatch(length, inverse_length) => write!(
+                f,
+                "Corrupted block length. Length: {}, Inverse length: {}",
+                length, inverse_length
+            ),
         }
     }
 }
@@ -128,6 +136,19 @@ impl TryFrom<&[u8; 2]> for StreamHeader {
 struct Inflator<R: io::Read> {
     input: R,
     header: StreamHeader,
+    done: bool,
+}
+
+fn read_u8(input: &mut impl io::Read) -> Result<u8, io::Error> {
+    let mut bytes = [0u8; 1];
+    input.read_exact(&mut bytes)?;
+    Ok(bytes[0])
+}
+
+fn read_u16(input: &mut impl io::Read) -> Result<u16, io::Error> {
+    let mut bytes = [0u8; 2];
+    input.read_exact(&mut bytes)?;
+    Ok(u16::from_le_bytes(bytes))
 }
 
 impl<R: io::Read> Inflator<R> {
@@ -135,7 +156,31 @@ impl<R: io::Read> Inflator<R> {
         let mut header = [0u8; 2];
         input.read_exact(&mut header)?;
         let header = StreamHeader::try_from(&header)?;
-        Ok(Self { input, header })
+        Ok(Self {
+            input,
+            header,
+            done: false,
+        })
+    }
+
+    fn next_block(&mut self) -> Result<Vec<u8>, InflateError> {
+        let header = read_u8(&mut self.input)?;
+        let is_final_block = header.bits(0..=0);
+        let block_type = header.bits(1..=2);
+        if block_type != 0 {
+            return Err(InflateError::UnimplementedBlockType(block_type));
+        }
+        let length = read_u16(&mut self.input)?;
+        let inverse_length = read_u16(&mut self.input)?;
+        if inverse_length != (!length) {
+            return Err(InflateError::LengthComplementMismatch(
+                length,
+                inverse_length,
+            ));
+        }
+        let mut data = vec![0u8; length as usize];
+        self.input.read_exact(&mut data)?;
+        Ok(data)
     }
 }
 
@@ -223,6 +268,32 @@ mod tests {
             }
         );
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_uncompressed_block() -> Result<(), InflateError> {
+        let mut raw: &[u8] = &[
+            0x48,
+            0b1010_0000 + 8,
+            // header
+            0,
+            // length
+            5,
+            0,
+            // inverse length
+            !5,
+            !0,
+            // data
+            1,
+            2,
+            3,
+            4,
+            5,
+        ];
+        let mut inflator = Inflator::try_new(&mut raw)?;
+        let block = inflator.next_block()?;
+        assert_eq!(block, vec![1, 2, 3, 4, 5]);
         Ok(())
     }
 }
