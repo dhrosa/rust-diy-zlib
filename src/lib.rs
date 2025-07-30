@@ -124,6 +124,21 @@ impl TryFrom<&[u8; 2]> for StreamHeader {
     }
 }
 
+#[derive(Debug)]
+struct Inflator<R: io::Read> {
+    input: R,
+    header: StreamHeader,
+}
+
+impl<R: io::Read> Inflator<R> {
+    fn try_new(mut input: R) -> Result<Self, InflateError> {
+        let mut header = [0u8; 2];
+        input.read_exact(&mut header)?;
+        let header = StreamHeader::try_from(&header)?;
+        Ok(Self { input, header })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::InflateError::*;
@@ -178,6 +193,36 @@ mod tests {
                 }
             }
         );
+        Ok(())
+    }
+
+    #[test]
+    fn test_window_size() {
+        assert_eq!(CompressionInfo(7).window_size(), 32768);
+    }
+
+    #[test]
+    fn test_truncated_header() {
+        let mut raw: &[u8] = &[0];
+        assert_matches!(Inflator::try_new(&mut raw), Err(IoError(_)));
+    }
+
+    #[test]
+    fn test_begin_stream() -> Result<(), InflateError> {
+        let mut raw: &[u8] = &[0x48, 0b1010_0000 + 8];
+        let inflator = Inflator::try_new(&mut raw)?;
+        assert_eq!(
+            inflator.header,
+            StreamHeader {
+                method: CompressionMethod::Deflate,
+                info: CompressionInfo(4),
+                flags: Flags {
+                    preset_dictionary: true,
+                    compression_level: 2,
+                }
+            }
+        );
+
         Ok(())
     }
 }
