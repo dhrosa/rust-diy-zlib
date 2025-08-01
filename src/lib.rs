@@ -1,7 +1,9 @@
 #![feature(assert_matches)]
 
-use std::error::Error;
-use std::fmt;
+pub mod error;
+
+use crate::error::InflateError;
+
 use std::io;
 
 trait BitRange {
@@ -15,48 +17,11 @@ impl BitRange for u8 {
     }
 }
 
-#[derive(Debug)]
-enum InflateError {
-    IoError(io::Error),
-    InvalidCompressionInfo(u8),
-    InvalidCompressionMethod(u8),
-    FlagCheckMismatch(u16),
-    UnimplementedBlockType(u8),
-    LengthComplementMismatch(u16, u16),
-}
-
-impl From<io::Error> for InflateError {
-    fn from(error: io::Error) -> Self {
-        Self::IoError(error)
-    }
-}
-
-impl fmt::Display for InflateError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        use InflateError::*;
-
-        match self {
-            IoError(e) => write!(f, "I/O error: {}", e),
-            InvalidCompressionInfo(i) => write!(f, "Invalid compression info value: {}", i),
-            InvalidCompressionMethod(m) => write!(f, "Invalid compression method: {}", m),
-            FlagCheckMismatch(c) => write!(f, "Flag checksum is not a multiple of 31: {}", c),
-            UnimplementedBlockType(b) => write!(f, "Unimplemented block type: {}", b),
-            LengthComplementMismatch(length, inverse_length) => write!(
-                f,
-                "Corrupted block length. Length: {}, Inverse length: {}",
-                length, inverse_length
-            ),
-        }
-    }
-}
-
-impl Error for InflateError {}
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct CompressionInfo(u8);
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-struct CompressionInfo(u8);
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-enum CompressionMethod {
+pub enum CompressionMethod {
     Deflate = 8,
 }
 
@@ -72,7 +37,7 @@ impl TryFrom<u8> for CompressionMethod {
 }
 
 impl CompressionInfo {
-    fn window_size(&self) -> u16 {
+    pub fn window_size(&self) -> u16 {
         let exponent = self.0 + 8;
         return 1 << exponent;
     }
@@ -105,7 +70,7 @@ impl From<u8> for Flags {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-struct StreamHeader {
+pub struct StreamHeader {
     method: CompressionMethod,
     info: CompressionInfo,
     flags: Flags,
@@ -133,10 +98,9 @@ impl TryFrom<&[u8; 2]> for StreamHeader {
 }
 
 #[derive(Debug)]
-struct Inflator<R: io::Read> {
+pub struct Inflator<R: io::Read> {
     input: R,
-    header: StreamHeader,
-    done: bool,
+    pub header: StreamHeader,
 }
 
 fn read_u8(input: &mut impl io::Read) -> Result<u8, io::Error> {
@@ -152,20 +116,16 @@ fn read_u16(input: &mut impl io::Read) -> Result<u16, io::Error> {
 }
 
 impl<R: io::Read> Inflator<R> {
-    fn try_new(mut input: R) -> Result<Self, InflateError> {
+    pub fn try_new(mut input: R) -> Result<Self, InflateError> {
         let mut header = [0u8; 2];
         input.read_exact(&mut header)?;
         let header = StreamHeader::try_from(&header)?;
-        Ok(Self {
-            input,
-            header,
-            done: false,
-        })
+        Ok(Self { input, header })
     }
 
-    fn next_block(&mut self) -> Result<Vec<u8>, InflateError> {
+    pub fn next_block(&mut self) -> Result<Vec<u8>, InflateError> {
         let header = read_u8(&mut self.input)?;
-        let is_final_block = header.bits(0..=0);
+        let _is_final_block = header.bits(0..=0);
         let block_type = header.bits(1..=2);
         if block_type != 0 {
             return Err(InflateError::UnimplementedBlockType(block_type));
