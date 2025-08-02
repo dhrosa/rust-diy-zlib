@@ -1,47 +1,65 @@
 use std::io::{self, Read};
 
+// Buffer of up to 8-bits for reading from a byte-based input at a sub-byte
+// granularity.
+#[derive(Debug, Clone, Copy)]
+struct BitBuffer {
+    byte: u8,
+    bit_offset: u8,
+}
+
+impl BitBuffer {
+    fn new(byte: u8) -> BitBuffer {
+        BitBuffer {
+            byte,
+            bit_offset: 0,
+        }
+    }
+
+    // Consume a single bit. The left return value contains the remaining bits
+    // left to read, if there are any.
+    fn read_bit(self) -> (Option<BitBuffer>, u8) {
+        let Self { byte, bit_offset } = self;
+        let bit = byte & 1;
+        let byte = byte >> 1;
+        let bit_offset = bit_offset + 1;
+        let buffer = if bit_offset == 8 {
+            None
+        } else {
+            Some(BitBuffer { byte, bit_offset })
+        };
+        (buffer, bit)
+    }
+}
+
 // Extention to io::Read that allows reading individual bits from the input
 // stream.
-struct BitReader<R: io::Read> {
+pub struct BitReader<R: io::Read> {
     input: R,
-    current_byte: Option<u8>,
-    bit_offset: u8,
+    bit_buffer: Option<BitBuffer>,
 }
 
 impl<R: io::Read> BitReader<R> {
     pub fn new(input: R) -> Self {
         BitReader {
             input,
-            current_byte: None,
-            bit_offset: 0,
+            bit_buffer: None,
         }
     }
 
-    fn reset_buffer(&mut self) {
-        self.current_byte = None;
-        self.bit_offset = 0;
-    }
-
-    fn refill_buffer(&mut self) -> io::Result<u8> {
-        self.reset_buffer();
+    fn read_byte(&mut self) -> io::Result<u8> {
         let mut bytes = [0u8];
         self.read_exact(&mut bytes)?;
-        let byte = bytes[0];
-        self.current_byte = Some(byte);
-        Ok(byte)
+        Ok(bytes[0])
     }
 
     pub fn read_bit(&mut self) -> io::Result<u8> {
-        let byte = match self.current_byte {
+        let buffer = match self.bit_buffer {
+            None => BitBuffer::new(self.read_byte()?),
             Some(b) => b,
-            None => self.refill_buffer()?,
         };
-        let bit = byte & 1;
-        self.bit_offset += 1;
-        self.current_byte = Some(byte >> 1);
-        if self.bit_offset == 8 {
-            self.reset_buffer()
-        }
+        let bit: u8;
+        (self.bit_buffer, bit) = buffer.read_bit();
         Ok(bit)
     }
 
@@ -59,7 +77,7 @@ impl<R: io::Read> BitReader<R> {
 // Any partially-read byte initially present is discarded.
 impl<R: io::Read> io::Read for BitReader<R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        self.reset_buffer();
+        self.bit_buffer = None;
         self.input.read(buf)
     }
 }
