@@ -25,7 +25,7 @@ impl<R: io::Read> BitReader<R> {
     fn refill_buffer(&mut self) -> io::Result<u8> {
         self.reset_buffer();
         let mut bytes = [0u8];
-        self.read_exact(&mut bytes);
+        self.read_exact(&mut bytes)?;
         let byte = bytes[0];
         self.current_byte = Some(byte);
         Ok(byte)
@@ -74,7 +74,7 @@ mod tests {
         let mut reader = BitReader::new(raw);
 
         let mut out = Vec::<u8>::new();
-        reader.read_to_end(&mut out);
+        reader.read_to_end(&mut out)?;
         assert_eq!(out, vec![1, 2]);
         Ok(())
     }
@@ -116,6 +116,24 @@ mod tests {
         // Cross byte boundary.
         assert_eq!(reader.read_bits(4)?, 0b1011);
         assert_eq!(reader.read_bits(5)?, 0b10111);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_passthrough_after_partial_read() -> io::Result<()> {
+        let raw: &[u8] = &[0b1010_1010, 0b1100_1100, 0b1111_1110];
+        let mut reader = BitReader::new(raw);
+
+        assert_eq!(reader.read_bits(4)?, 0b1010);
+
+        // Upper half of first-byte should be discarded.
+        let mut out = [0u8];
+        reader.read_exact(&mut out)?;
+        assert_eq!(out, [0b1100_1100]);
+
+        // Start another partial read.
+        assert_eq!(reader.read_bits(4)?, 0b1110);
 
         Ok(())
     }
