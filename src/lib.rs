@@ -3,9 +3,10 @@
 pub mod bit_reader;
 pub mod error;
 
+use crate::bit_reader::BitReader;
 use crate::error::InflateError;
 
-use std::io;
+use std::io::{self, Read};
 
 trait BitRange {
     fn bits(&self, range: std::ops::RangeInclusive<u8>) -> Self;
@@ -100,39 +101,27 @@ impl TryFrom<&[u8; 2]> for StreamHeader {
 
 #[derive(Debug)]
 pub struct Inflator<R: io::Read> {
-    input: R,
+    input: BitReader<R>,
     pub header: StreamHeader,
 }
 
-fn read_u8(input: &mut impl io::Read) -> Result<u8, io::Error> {
-    let mut bytes = [0u8; 1];
-    input.read_exact(&mut bytes)?;
-    Ok(bytes[0])
-}
-
-fn read_u16(input: &mut impl io::Read) -> Result<u16, io::Error> {
-    let mut bytes = [0u8; 2];
-    input.read_exact(&mut bytes)?;
-    Ok(u16::from_le_bytes(bytes))
-}
-
 impl<R: io::Read> Inflator<R> {
-    pub fn try_new(mut input: R) -> Result<Self, InflateError> {
+    pub fn try_new(input: R) -> Result<Self, InflateError> {
         let mut header = [0u8; 2];
+        let mut input = BitReader::new(input);
         input.read_exact(&mut header)?;
         let header = StreamHeader::try_from(&header)?;
         Ok(Self { input, header })
     }
 
     pub fn next_block(&mut self) -> Result<Vec<u8>, InflateError> {
-        let header = read_u8(&mut self.input)?;
-        let _is_final_block = header.bits(0..=0);
-        let block_type = header.bits(1..=2);
+        let _is_final_block = self.input.read_bit()?;
+        let block_type = self.input.read_bits(2)? as u8;
         if block_type != 0 {
             return Err(InflateError::UnimplementedBlockType(block_type));
         }
-        let length = read_u16(&mut self.input)?;
-        let inverse_length = read_u16(&mut self.input)?;
+        let length = self.input.read_u16()?;
+        let inverse_length = self.input.read_u16()?;
         if inverse_length != (!length) {
             return Err(InflateError::LengthComplementMismatch(
                 length,

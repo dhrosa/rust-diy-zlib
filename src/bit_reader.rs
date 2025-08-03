@@ -34,6 +34,7 @@ impl BitBuffer {
 
 // Extention to io::Read that allows reading individual bits from the input
 // stream.
+#[derive(Debug)]
 pub struct BitReader<R: io::Read> {
     input: R,
     bit_buffer: Option<BitBuffer>,
@@ -47,15 +48,21 @@ impl<R: io::Read> BitReader<R> {
         }
     }
 
-    fn read_byte(&mut self) -> io::Result<u8> {
+    pub fn read_u8(&mut self) -> io::Result<u8> {
         let mut bytes = [0u8];
         self.read_exact(&mut bytes)?;
         Ok(bytes[0])
     }
 
+    pub fn read_u16(&mut self) -> io::Result<u16> {
+        let mut bytes = [0u8; 2];
+        self.read_exact(&mut bytes)?;
+        Ok(u16::from_le_bytes(bytes))
+    }
+
     pub fn read_bit(&mut self) -> io::Result<u8> {
         let buffer = match self.bit_buffer {
-            None => BitBuffer::new(self.read_byte()?),
+            None => BitBuffer::new(self.read_u8()?),
             Some(b) => b,
         };
         let bit: u8;
