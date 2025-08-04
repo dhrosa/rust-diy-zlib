@@ -4,7 +4,7 @@ pub mod bit_reader;
 pub mod error;
 
 use crate::bit_reader::BitReader;
-use crate::error::InflateError;
+use crate::error::{InflateError, InflateResult};
 
 use std::io::{self, Read};
 
@@ -30,7 +30,7 @@ pub enum CompressionMethod {
 impl TryFrom<u8> for CompressionMethod {
     type Error = InflateError;
 
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
+    fn try_from(value: u8) -> InflateResult<Self> {
         if value != CompressionMethod::Deflate as u8 {
             return Err(InflateError::InvalidCompressionMethod(value));
         }
@@ -48,7 +48,7 @@ impl CompressionInfo {
 impl TryFrom<u8> for CompressionInfo {
     type Error = InflateError;
 
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
+    fn try_from(value: u8) -> InflateResult<Self> {
         if value >= 8 {
             return Err(InflateError::InvalidCompressionInfo(value));
         }
@@ -81,7 +81,7 @@ pub struct StreamHeader {
 impl TryFrom<&[u8; 2]> for StreamHeader {
     type Error = InflateError;
 
-    fn try_from(bytes: &[u8; 2]) -> Result<Self, Self::Error> {
+    fn try_from(bytes: &[u8; 2]) -> InflateResult<Self> {
         let [cmf, flg] = *bytes;
         let method = CompressionMethod::try_from(cmf.bits(0..=3))?;
         let info = CompressionInfo::try_from(cmf.bits(4..=7))?;
@@ -106,7 +106,7 @@ pub struct Inflator<R: io::Read> {
 }
 
 impl<R: io::Read> Inflator<R> {
-    pub fn try_new(input: R) -> Result<Self, InflateError> {
+    pub fn try_new(input: R) -> InflateResult<Self> {
         let mut header = [0u8; 2];
         let mut input = BitReader::new(input);
         input.read_exact(&mut header)?;
@@ -114,12 +114,16 @@ impl<R: io::Read> Inflator<R> {
         Ok(Self { input, header })
     }
 
-    pub fn next_block(&mut self) -> Result<Vec<u8>, InflateError> {
+    pub fn next_block(&mut self) -> InflateResult<Vec<u8>> {
         let _is_final_block = self.input.read_bit()?;
         let block_type = self.input.read_bits(2)? as u8;
         if block_type != 0 {
             return Err(InflateError::UnimplementedBlockType(block_type));
         }
+        self.read_uncompressed_block()
+    }
+
+    fn read_uncompressed_block(&mut self) -> InflateResult<Vec<u8>> {
         let length = self.input.read_u16()?;
         let inverse_length = self.input.read_u16()?;
         if inverse_length != (!length) {
@@ -175,7 +179,7 @@ mod tests {
     }
 
     #[test]
-    fn test_valid_stream_header() -> Result<(), InflateError> {
+    fn test_valid_stream_header() -> InflateResult<()> {
         let header = StreamHeader::try_from(&[0x48, 0b1010_0000 + 8])?;
         assert_eq!(
             header,
@@ -203,7 +207,7 @@ mod tests {
     }
 
     #[test]
-    fn test_begin_stream() -> Result<(), InflateError> {
+    fn test_begin_stream() -> InflateResult<()> {
         let mut raw: &[u8] = &[0x48, 0b1010_0000 + 8];
         let inflator = Inflator::try_new(&mut raw)?;
         assert_eq!(
@@ -222,7 +226,7 @@ mod tests {
     }
 
     #[test]
-    fn test_uncompressed_block() -> Result<(), InflateError> {
+    fn test_uncompressed_block() -> InflateResult<()> {
         let mut raw: &[u8] = &[
             0x48,
             0b1010_0000 + 8,

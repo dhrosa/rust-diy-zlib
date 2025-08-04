@@ -38,3 +38,5 @@ impl fmt::Display for InflateError {
 }
 
 impl Error for InflateError {}
+
+pub type InflateResult<T> = Result<T, InflateError>;
