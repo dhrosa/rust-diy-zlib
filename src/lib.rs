@@ -1,7 +1,8 @@
 #![feature(assert_matches)]
 
-pub mod bit_reader;
-pub mod error;
+mod bit_reader;
+pub mod code_table;
+mod error;
 
 use crate::bit_reader::BitReader;
 use crate::error::{InflateError, InflateResult};
