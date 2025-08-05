@@ -55,6 +55,32 @@ fn min_codes_by_length(code_lengths: &[CodeLength]) -> HashMap<CodeLength, Code>
     min_codes
 }
 
+#[derive(Debug, PartialEq, Eq)]
+struct CodeTable(Vec<Code>);
+
+impl CodeTable {
+    fn from_code_lengths(code_lengths: &[CodeLength]) -> Self {
+        let mut codes = Vec::new();
+        for &length in code_lengths {
+            codes.push(Code {
+                bits: 0,
+                length: length,
+            });
+        }
+        let mut next_codes = min_codes_by_length(code_lengths);
+        // Step 3 of algorithm from https://datatracker.ietf.org/doc/html/rfc1951#page-9
+        for (i, code) in codes.iter_mut().enumerate() {
+            if code.length == 0 {
+                continue;
+            }
+            let next_code = next_codes.get_mut(&code.length).unwrap();
+            code.bits = next_code.bits;
+            next_code.bits += 1;
+        }
+        CodeTable(codes)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -84,6 +110,24 @@ mod tests {
                 (2, Code::from("00")),
                 (3, Code::from("010")),
                 (4, Code::from("1110")),
+            ])
+        );
+    }
+
+    #[test]
+    fn test_from_code_lengths() {
+        let code_lengths = &[3, 3, 3, 3, 3, 2, 4, 4];
+        assert_eq!(
+            CodeTable::from_code_lengths(code_lengths),
+            CodeTable(vec![
+                Code::from("010"),
+                Code::from("011"),
+                Code::from("100"),
+                Code::from("101"),
+                Code::from("110"),
+                Code::from("00"),
+                Code::from("1110"),
+                Code::from("1111"),
             ])
         );
     }
