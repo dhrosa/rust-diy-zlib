@@ -87,6 +87,13 @@ impl CodeTable {
         }
         CodeTable(codes)
     }
+
+    pub fn fixed() -> Self {
+        let mut code_lengths: [CodeLength; 288] = [8; 288];
+        code_lengths[144..=255].fill(9);
+        code_lengths[256..=279].fill(7);
+        Self::from_code_lengths(&code_lengths)
+    }
 }
 
 #[cfg(test)]
@@ -137,5 +144,18 @@ mod tests {
                 Code::from("1111"),
             ])
         );
+    }
+
+    #[test]
+    fn test_fixed_table() {
+        let CodeTable(fixed) = CodeTable::fixed();
+        assert_eq!(fixed[0], Code::from("00110000"));
+        assert_eq!(fixed[143], Code::from("10111111"));
+        assert_eq!(fixed[144], Code::from("110010000"));
+        assert_eq!(fixed[255], Code::from("111111111"));
+        assert_eq!(fixed[256], Code::from("0000000"));
+        assert_eq!(fixed[279], Code::from("0010111"));
+        assert_eq!(fixed[280], Code::from("11000000"));
+        assert_eq!(fixed[287], Code::from("11000111"));
     }
 }
