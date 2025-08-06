@@ -1,15 +1,17 @@
-use std::collections::HashMap;
 use std::fmt;
 
 type CodeLength = u8;
 
-fn code_length_counts(code_lengths: &[CodeLength]) -> HashMap<CodeLength, u32> {
-    let mut counts = HashMap::new();
-    for length in code_lengths {
-        if *length > 0 {
-            let count = counts.entry(*length).or_insert(0);
-            *count += 1;
+// Each index is a code length, each value is the number of code lengths of that
+// value. The [0] value is always 0.
+fn code_length_counts(code_lengths: &[CodeLength]) -> Vec<u32> {
+    let max_code_length = *code_lengths.iter().max().unwrap();
+    let mut counts = vec![0; (max_code_length as usize) + 1];
+    for &length in code_lengths {
+        if length == 0 {
+            continue;
         }
+        counts[length as usize] += 1;
     }
     counts
 }
@@ -52,7 +54,7 @@ fn min_codes_by_length(code_lengths: &[CodeLength]) -> Vec<Code> {
     let counts = code_length_counts(code_lengths);
     let max_code_length = *code_lengths.iter().max().unwrap();
     for length in 1..=max_code_length {
-        code_bits = (code_bits + counts.get(&(length - 1)).unwrap_or(&0)) << 1;
+        code_bits = (code_bits + counts.get((length - 1) as usize).unwrap()) << 1;
         min_codes.push(Code {
             bits: code_bits,
             length,
@@ -62,10 +64,10 @@ fn min_codes_by_length(code_lengths: &[CodeLength]) -> Vec<Code> {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-struct CodeTable(Vec<Code>);
+pub struct CodeTable(Vec<Code>);
 
 impl CodeTable {
-    fn from_code_lengths(code_lengths: &[CodeLength]) -> Self {
+    pub fn from_code_lengths(code_lengths: &[CodeLength]) -> Self {
         let mut codes = Vec::new();
         for &length in code_lengths {
             codes.push(Code {
@@ -75,7 +77,7 @@ impl CodeTable {
         }
         let mut next_codes = min_codes_by_length(code_lengths);
         // Step 3 of algorithm from https://datatracker.ietf.org/doc/html/rfc1951#page-9
-        for (i, code) in codes.iter_mut().enumerate() {
+        for code in codes.iter_mut() {
             if code.length == 0 {
                 continue;
             }
@@ -95,10 +97,7 @@ mod tests {
     fn test_code_length_counts() {
         // Example from https://datatracker.ietf.org/doc/html/rfc1951#page-9
         let code_lengths = &[3, 3, 3, 3, 3, 2, 4, 4];
-        assert_eq!(
-            code_length_counts(code_lengths),
-            HashMap::from([(2, 1), (3, 5), (4, 2)])
-        );
+        assert_eq!(code_length_counts(code_lengths), vec![0, 0, 1, 5, 2]);
     }
 
     #[test]
