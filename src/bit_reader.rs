@@ -18,9 +18,9 @@ impl BitBuffer {
 
     // Consume a single bit. The left return value contains the remaining bits
     // left to read, if there are any.
-    fn read_bit(self) -> (Option<BitBuffer>, u8) {
+    fn read_bit(self) -> (Option<BitBuffer>, bool) {
         let Self { byte, bit_offset } = self;
-        let bit = byte & 1;
+        let bit = (byte & 1) != 0;
         let byte = byte >> 1;
         let bit_offset = bit_offset + 1;
         let buffer = if bit_offset == 8 {
@@ -60,12 +60,12 @@ impl<R: io::Read> BitReader<R> {
         Ok(u16::from_le_bytes(bytes))
     }
 
-    pub fn read_bit(&mut self) -> io::Result<u8> {
+    pub fn read_bit(&mut self) -> io::Result<bool> {
         let buffer = match self.bit_buffer {
             None => BitBuffer::new(self.read_u8()?),
             Some(b) => b,
         };
-        let bit: u8;
+        let bit: bool;
         (self.bit_buffer, bit) = buffer.read_bit();
         Ok(bit)
     }
@@ -111,21 +111,21 @@ mod tests {
         let mut reader = BitReader::new(raw);
 
         // 1st byte
-        assert_eq!(reader.read_bit()?, 1);
-        assert_eq!(reader.read_bit()?, 0);
-        assert_eq!(reader.read_bit()?, 1);
-        assert_eq!(reader.read_bit()?, 1);
-        assert_eq!(reader.read_bit()?, 0);
-        assert_eq!(reader.read_bit()?, 1);
-        assert_eq!(reader.read_bit()?, 1);
-        assert_eq!(reader.read_bit()?, 1);
+        assert_eq!(reader.read_bit()?, true);
+        assert_eq!(reader.read_bit()?, false);
+        assert_eq!(reader.read_bit()?, true);
+        assert_eq!(reader.read_bit()?, true);
+        assert_eq!(reader.read_bit()?, false);
+        assert_eq!(reader.read_bit()?, true);
+        assert_eq!(reader.read_bit()?, true);
+        assert_eq!(reader.read_bit()?, true);
         // 2nd byte
-        assert_eq!(reader.read_bit()?, 0);
-        assert_eq!(reader.read_bit()?, 1);
-        assert_eq!(reader.read_bit()?, 1);
-        assert_eq!(reader.read_bit()?, 1);
-        assert_eq!(reader.read_bit()?, 1);
-        assert_eq!(reader.read_bit()?, 0);
+        assert_eq!(reader.read_bit()?, false);
+        assert_eq!(reader.read_bit()?, true);
+        assert_eq!(reader.read_bit()?, true);
+        assert_eq!(reader.read_bit()?, true);
+        assert_eq!(reader.read_bit()?, true);
+        assert_eq!(reader.read_bit()?, false);
         Ok(())
     }
 
