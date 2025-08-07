@@ -1,3 +1,5 @@
+use crate::code::Code;
+use crate::code_table::CodeToSymbolTable;
 use std::io::{self, Read};
 
 // Buffer of up to 8-bits for reading from a byte-based input at a sub-byte
@@ -77,6 +79,17 @@ impl<R: io::Read> BitReader<R> {
             value |= bit << i;
         }
         Ok(value)
+    }
+
+    // Read a huffman-compressed symbol from the bitstream.
+    pub fn read_symbol(&mut self, table: &CodeToSymbolTable) -> io::Result<u32> {
+        let mut code = Code::default();
+        loop {
+            if let Some(&symbol) = table.get(&code) {
+                return Ok(symbol);
+            }
+            code = code.append_bit(self.read_bit()?);
+        }
     }
 }
 
@@ -160,6 +173,22 @@ mod tests {
         // Start another partial read.
         assert_eq!(reader.read_bits(4)?, 0b1110);
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_read_symbol() -> io::Result<()> {
+        let table = CodeToSymbolTable::from([
+            (Code::from("0"), 0),
+            (Code::from("10"), 1),
+            (Code::from("11"), 2),
+        ]);
+        let raw: &[u8] = &[0b010_11_01_0];
+        let mut reader = BitReader::new(raw);
+        assert_eq!(reader.read_symbol(&table)?, 0);
+        assert_eq!(reader.read_symbol(&table)?, 1);
+        assert_eq!(reader.read_symbol(&table)?, 2);
+        assert_eq!(reader.read_bits(3)?, 0b010);
         Ok(())
     }
 }

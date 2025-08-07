@@ -1,6 +1,7 @@
-type CodeLength = u8;
-
 use crate::code::Code;
+use std::collections::HashMap;
+
+type CodeLength = u8;
 
 // Each index is a code length, each value is the number of code lengths of that
 // value. The [0] value is always 0.
@@ -33,9 +34,11 @@ fn min_codes_by_length(code_lengths: &[CodeLength]) -> Vec<Code> {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct CodeTable(Vec<Code>);
+pub struct SymbolToCodeTable(Vec<Code>);
 
-impl CodeTable {
+pub type CodeToSymbolTable = HashMap<Code, u32>;
+
+impl SymbolToCodeTable {
     pub fn from_code_lengths(code_lengths: &[CodeLength]) -> Self {
         let mut codes = Vec::new();
         for &length in code_lengths {
@@ -54,7 +57,7 @@ impl CodeTable {
             code.bits = next_code.bits;
             next_code.bits += 1;
         }
-        CodeTable(codes)
+        SymbolToCodeTable(codes)
     }
 
     pub fn fixed() -> Self {
@@ -62,6 +65,14 @@ impl CodeTable {
         code_lengths[144..=255].fill(9);
         code_lengths[256..=279].fill(7);
         Self::from_code_lengths(&code_lengths)
+    }
+
+    pub fn inverse(&self) -> CodeToSymbolTable {
+        let mut inverse = HashMap::new();
+        for (symbol, code) in self.0.iter().enumerate() {
+            inverse.insert(*code, symbol as u32);
+        }
+        inverse
     }
 }
 
@@ -95,8 +106,8 @@ mod tests {
     fn test_from_code_lengths() {
         let code_lengths = &[3, 3, 3, 3, 3, 2, 4, 4];
         assert_eq!(
-            CodeTable::from_code_lengths(code_lengths),
-            CodeTable(vec![
+            SymbolToCodeTable::from_code_lengths(code_lengths),
+            SymbolToCodeTable(vec![
                 Code::from("010"),
                 Code::from("011"),
                 Code::from("100"),
@@ -111,7 +122,7 @@ mod tests {
 
     #[test]
     fn test_fixed_table() {
-        let CodeTable(fixed) = CodeTable::fixed();
+        let SymbolToCodeTable(fixed) = SymbolToCodeTable::fixed();
         assert_eq!(fixed[0], Code::from("00110000"));
         assert_eq!(fixed[143], Code::from("10111111"));
         assert_eq!(fixed[144], Code::from("110010000"));
@@ -120,5 +131,19 @@ mod tests {
         assert_eq!(fixed[279], Code::from("0010111"));
         assert_eq!(fixed[280], Code::from("11000000"));
         assert_eq!(fixed[287], Code::from("11000111"));
+    }
+
+    #[test]
+    fn test_inverse() {
+        let code_lengths = &[1, 2, 2];
+        let table = SymbolToCodeTable::from_code_lengths(code_lengths);
+        assert_eq!(
+            table.inverse(),
+            HashMap::from([
+                (Code::from("0"), 0),
+                (Code::from("10"), 1),
+                (Code::from("11"), 2),
+            ])
+        )
     }
 }
