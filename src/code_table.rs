@@ -1,6 +1,6 @@
-use std::fmt;
-
 type CodeLength = u8;
+
+use crate::code::Code;
 
 // Each index is a code length, each value is the number of code lengths of that
 // value. The [0] value is always 0.
@@ -14,37 +14,6 @@ fn code_length_counts(code_lengths: &[CodeLength]) -> Vec<u32> {
         counts[length as usize] += 1;
     }
     counts
-}
-
-#[derive(PartialEq, Eq, Hash, Clone, Copy)]
-struct Code {
-    bits: u32,
-    length: u8,
-}
-
-// Test-only covenience method for constructing a Code from a string.
-impl From<&str> for Code {
-    fn from(s: &str) -> Self {
-        Code {
-            bits: u32::from_str_radix(s, 2).unwrap(),
-            length: s.len() as u8,
-        }
-    }
-}
-
-impl fmt::Debug for Code {
-    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        if self.length == 0 {
-            return Ok(());
-        }
-        write!(f, "{:0width$b}", self.bits, width = self.length as usize)
-    }
-}
-
-impl Default for Code {
-    fn default() -> Self {
-        Code { bits: 0, length: 0 }
-    }
 }
 
 // Step 2 of algorithm from https://datatracker.ietf.org/doc/html/rfc1951#page-9
@@ -105,12 +74,6 @@ mod tests {
         // Example from https://datatracker.ietf.org/doc/html/rfc1951#page-9
         let code_lengths = &[3, 3, 3, 3, 3, 2, 4, 4];
         assert_eq!(code_length_counts(code_lengths), vec![0, 0, 1, 5, 2]);
-    }
-
-    #[test]
-    fn test_code() {
-        assert_eq!(format!("{:?}", Code { bits: 0, length: 0 }), "");
-        assert_eq!(format!("{:?}", Code { bits: 2, length: 3 }), "010");
     }
 
     #[test]

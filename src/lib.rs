@@ -1,6 +1,7 @@
 #![feature(assert_matches)]
 
 mod bit_reader;
+mod code;
 pub mod code_table;
 mod error;
 
