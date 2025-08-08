@@ -1,5 +1,7 @@
+use crate::bit_reader::BitReader;
 use crate::code::Code;
 use std::collections::HashMap;
+use std::io;
 
 type CodeLength = u8;
 
@@ -36,8 +38,6 @@ fn min_codes_by_length(code_lengths: &[CodeLength]) -> Vec<Code> {
 #[derive(Debug, PartialEq, Eq)]
 pub struct SymbolToCodeTable(Vec<Code>);
 
-pub type CodeToSymbolTable = HashMap<Code, u32>;
-
 impl SymbolToCodeTable {
     pub fn from_code_lengths(code_lengths: &[CodeLength]) -> Self {
         let mut codes = Vec::new();
@@ -72,7 +72,28 @@ impl SymbolToCodeTable {
         for (symbol, code) in self.0.iter().enumerate() {
             inverse.insert(*code, symbol as u32);
         }
-        inverse
+        CodeToSymbolTable(inverse)
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct CodeToSymbolTable(HashMap<Code, u32>);
+
+impl CodeToSymbolTable {
+    pub fn read_symbol<R: io::Read>(&self, reader: &mut BitReader<R>) -> io::Result<u32> {
+        let mut code = Code::default();
+        loop {
+            if let Some(&symbol) = self.0.get(&code) {
+                return Ok(symbol);
+            }
+            code = code.append_bit(reader.read_bit()?);
+        }
+    }
+}
+
+impl<const N: usize> From<[(Code, u32); N]> for CodeToSymbolTable {
+    fn from(pairs: [(Code, u32); N]) -> Self {
+        CodeToSymbolTable(HashMap::from(pairs))
     }
 }
 
@@ -139,11 +160,27 @@ mod tests {
         let table = SymbolToCodeTable::from_code_lengths(code_lengths);
         assert_eq!(
             table.inverse(),
-            HashMap::from([
+            CodeToSymbolTable::from([
                 (Code::from("0"), 0),
                 (Code::from("10"), 1),
                 (Code::from("11"), 2),
             ])
         )
+    }
+
+    #[test]
+    fn read_read_code() -> io::Result<()> {
+        let table = CodeToSymbolTable::from([
+            (Code::from("0"), 0),
+            (Code::from("10"), 1),
+            (Code::from("11"), 2),
+        ]);
+        let raw: &[u8] = &[0b010_11_01_0];
+        let mut reader = BitReader::new(raw);
+        assert_eq!(table.read_symbol(&mut reader)?, 0);
+        assert_eq!(table.read_symbol(&mut reader)?, 1);
+        assert_eq!(table.read_symbol(&mut reader)?, 2);
+        assert_eq!(reader.read_bits(3)?, 0b010);
+        Ok(())
     }
 }
