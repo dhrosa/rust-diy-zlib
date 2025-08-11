@@ -82,6 +82,10 @@ impl SymbolToCodeTable {
 pub struct CodeToSymbolTable(HashMap<Code, u32>);
 
 impl CodeToSymbolTable {
+    fn fixed() -> Self {
+        SymbolToCodeTable::fixed().inverse()
+    }
+
     fn read_symbol<R: io::Read>(&self, reader: &mut BitReader<R>) -> io::Result<u32> {
         let mut code = Code::default();
         loop {
@@ -100,7 +104,39 @@ impl CodeToSymbolTable {
         if symbol == 256 {
             return Ok(Instruction::EndOfBlock);
         }
-        todo!();
+        let length_base = symbol as u16;
+        let length = self.read_length(length_base, reader)?;
+        let distance = self.read_distance(reader)?;
+        Ok(Instruction::BackReference { length, distance })
+    }
+
+    fn read_length<R: io::Read>(&self, base: u16, reader: &mut BitReader<R>) -> io::Result<u16> {
+        // Lengths with no additional bits.
+        if base <= 264 {
+            return Ok(base + 3 - 257);
+        }
+        let length = match base {
+            265 => 11 + reader.read_bits(2)?,
+            271 => 27 + reader.read_bits(2)?,
+            _ => panic!("unimplemented base length: {base}"),
+        };
+        Ok(length as u16)
+    }
+
+    fn read_distance<R: io::Read>(&self, reader: &mut BitReader<R>) -> io::Result<u16> {
+        let base = reader.read_bits(5)?;
+        if base <= 3 {
+            return Ok((base + 1) as u16);
+        }
+        println!("distance symbol: {base}");
+        let distance = match base {
+            4 => 5 + reader.read_bits(1)?,
+            5 => 7 + reader.read_bits(1)?,
+            6 => 9 + reader.read_bits(2)?,
+            7 => 13 + reader.read_bits(2)?,
+            _ => panic!("unimplemented base length: {base}"),
+        };
+        Ok(distance as u16)
     }
 }
 
@@ -203,7 +239,7 @@ mod tests {
         // 144 is 9-bit code: 110010000
         let raw = bit_string("0000 1100 0001 0011 0");
         let mut reader = BitReader::new(raw.as_slice());
-        let table = SymbolToCodeTable::fixed().inverse();
+        let table = CodeToSymbolTable::fixed();
         assert_eq!(
             table.read_instruction(&mut reader)?,
             Instruction::Literal(0)
@@ -217,14 +253,32 @@ mod tests {
 
     #[test]
     fn test_end_of_block() -> io::Result<()> {
-        // end of block is 7-bit code: 000 0000.i cr
+        // end of block is 7-bit code: 000 0000.
         let raw = bit_string("1000 0000");
         let mut reader = BitReader::new(raw.as_slice());
-        let table = SymbolToCodeTable::fixed().inverse();
+        let table = CodeToSymbolTable::fixed();
         assert_eq!(
             table.read_instruction(&mut reader)?,
             Instruction::EndOfBlock,
         );
+        Ok(())
+    }
+
+    #[test]
+    fn test_back_reference() -> io::Result<()> {
+        use super::Instruction::*;
+
+        let raw = bit_string("00110000 00000000 00000000");
+        let mut reader = BitReader::new(raw.as_slice());
+        let table = CodeToSymbolTable::fixed();
+        assert_eq!(
+            table.read_instruction(&mut reader)?,
+            BackReference {
+                length: 8,
+                distance: 1
+            }
+        );
+
         Ok(())
     }
 }
