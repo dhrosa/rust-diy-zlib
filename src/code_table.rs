@@ -1,5 +1,7 @@
 use crate::bit_reader::BitReader;
+use crate::bit_string::bit_string;
 use crate::code::Code;
+use crate::lz77::Instruction;
 use std::collections::HashMap;
 use std::io;
 
@@ -80,7 +82,7 @@ impl SymbolToCodeTable {
 pub struct CodeToSymbolTable(HashMap<Code, u32>);
 
 impl CodeToSymbolTable {
-    pub fn read_symbol<R: io::Read>(&self, reader: &mut BitReader<R>) -> io::Result<u32> {
+    fn read_symbol<R: io::Read>(&self, reader: &mut BitReader<R>) -> io::Result<u32> {
         let mut code = Code::default();
         loop {
             if let Some(&symbol) = self.0.get(&code) {
@@ -88,6 +90,17 @@ impl CodeToSymbolTable {
             }
             code = code.append_bit(reader.read_bit()?);
         }
+    }
+
+    fn read_instruction<R: io::Read>(&self, reader: &mut BitReader<R>) -> io::Result<Instruction> {
+        let symbol = self.read_symbol(reader)?;
+        if symbol < 256 {
+            return Ok(Instruction::Literal(symbol as u8));
+        }
+        if symbol == 256 {
+            return Ok(Instruction::EndOfBlock);
+        }
+        todo!();
     }
 }
 
@@ -169,7 +182,7 @@ mod tests {
     }
 
     #[test]
-    fn read_read_code() -> io::Result<()> {
+    fn test_read_code() -> io::Result<()> {
         let table = CodeToSymbolTable::from([
             (Code::from("0"), 0),
             (Code::from("10"), 1),
@@ -181,6 +194,37 @@ mod tests {
         assert_eq!(table.read_symbol(&mut reader)?, 1);
         assert_eq!(table.read_symbol(&mut reader)?, 2);
         assert_eq!(reader.read_bits(3)?, 0b010);
+        Ok(())
+    }
+
+    #[test]
+    fn test_read_literal() -> io::Result<()> {
+        // 0 is 8-bit code: 00110000
+        // 144 is 9-bit code: 110010000
+        let raw = bit_string("0000 1100 0001 0011 0");
+        let mut reader = BitReader::new(raw.as_slice());
+        let table = SymbolToCodeTable::fixed().inverse();
+        assert_eq!(
+            table.read_instruction(&mut reader)?,
+            Instruction::Literal(0)
+        );
+        assert_eq!(
+            table.read_instruction(&mut reader)?,
+            Instruction::Literal(144)
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_end_of_block() -> io::Result<()> {
+        // end of block is 7-bit code: 000 0000.i cr
+        let raw = bit_string("1000 0000");
+        let mut reader = BitReader::new(raw.as_slice());
+        let table = SymbolToCodeTable::fixed().inverse();
+        assert_eq!(
+            table.read_instruction(&mut reader)?,
+            Instruction::EndOfBlock,
+        );
         Ok(())
     }
 }

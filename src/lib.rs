@@ -5,6 +5,7 @@ mod bit_string;
 mod code;
 pub mod code_table;
 mod error;
+mod lz77;
 
 use crate::bit_reader::BitReader;
 use crate::error::{InflateError, InflateResult};
