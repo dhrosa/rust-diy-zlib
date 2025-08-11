@@ -111,15 +111,27 @@ impl CodeToSymbolTable {
     }
 
     fn read_length<R: io::Read>(&self, base: u16, reader: &mut BitReader<R>) -> io::Result<u16> {
-        // Lengths with no additional bits.
-        if base <= 264 {
-            return Ok(base + 3 - 257);
-        }
-        let length = match base {
-            265 => 11 + reader.read_bits(2)?,
-            271 => 27 + reader.read_bits(2)?,
-            _ => panic!("unimplemented base length: {base}"),
+        // from https://datatracker.ietf.org/doc/html/rfc1951#page-12
+        let (subtrahend, bit_count, offset) = if base <= 264 {
+            (257, 0, 3)
+        } else if base <= 268 {
+            (265, 1, 11)
+        } else if base <= 272 {
+            (269, 2, 19)
+        } else if base <= 276 {
+            (273, 3, 35)
+        } else if base <= 280 {
+            (277, 4, 67)
+        } else if base <= 284 {
+            (281, 5, 131)
+        } else if base == 280 {
+            (285, 0, 258)
+        } else {
+            panic!("Unsupported length symbol: {base}");
         };
+        let multiplier = 1 << bit_count;
+        let extra_bits = reader.read_bits(bit_count)? as u16;
+        let length = offset + multiplier * (base - subtrahend) + extra_bits;
         Ok(length as u16)
     }
 
