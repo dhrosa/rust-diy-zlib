@@ -120,7 +120,7 @@ impl<R: io::Read> Inflator<R> {
 
     pub fn next_block(&mut self) -> InflateResult<Vec<u8>> {
         let _is_final_block = self.input.read_bit()?;
-        let block_type = self.input.read_bits(2)? as u8;
+        let block_type = self.input.read_bits::<u8>(2)?;
         if block_type != 0 {
             return Err(InflateError::UnimplementedBlockType(block_type));
         }

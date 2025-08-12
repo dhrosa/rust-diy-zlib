@@ -97,64 +97,55 @@ impl CodeToSymbolTable {
     }
 
     fn read_instruction<R: io::Read>(&self, reader: &mut BitReader<R>) -> io::Result<Instruction> {
-        let symbol = self.read_symbol(reader)?;
+        let symbol = self.read_symbol(reader)? as u16;
         if symbol < 256 {
             return Ok(Instruction::Literal(symbol as u8));
         }
         if symbol == 256 {
             return Ok(Instruction::EndOfBlock);
         }
-        let length_base = symbol as u16;
-        let length = self.read_length(length_base, reader)?;
+        let length = self.read_length(symbol, reader)?;
         let distance = self.read_distance(reader)?;
         Ok(Instruction::BackReference { length, distance })
     }
 
-    fn read_length<R: io::Read>(&self, base: u16, reader: &mut BitReader<R>) -> io::Result<u16> {
-        // from https://datatracker.ietf.org/doc/html/rfc1951#page-12
-        let (subtrahend, bit_count, offset) = if base <= 264 {
-            (257, 0, 3)
-        } else if base <= 268 {
-            (265, 1, 11)
-        } else if base <= 272 {
-            (269, 2, 19)
-        } else if base <= 276 {
-            (273, 3, 35)
-        } else if base <= 280 {
-            (277, 4, 67)
-        } else if base <= 284 {
-            (281, 5, 131)
-        } else if base == 280 {
-            (285, 0, 258)
-        } else {
-            panic!("Unsupported length symbol: {base}");
-        };
-        let multiplier = 1 << bit_count;
-        let extra_bits = reader.read_bits(bit_count)? as u16;
-        let length = offset + multiplier * (base - subtrahend) + extra_bits;
-        Ok(length as u16)
+    fn read_length<R: io::Read>(&self, symbol: u16, reader: &mut BitReader<R>) -> io::Result<u16> {
+        // Borrowed from
+        // https://github.com/nayuki/Simple-DEFLATE-decompressor/blob/2586b459a84f8918851a1078c2c0482b1b383fba/python/deflatedecompress.py#L439
+        if symbol <= 264 {
+            return Ok(symbol - 254);
+        }
+        if symbol <= 284 {
+            let extra_bit_count = (symbol - 261) / 4;
+            let extra_bits = reader.read_bits::<u16>(extra_bit_count as u8)?;
+            let base = ((symbol - 265) % 4 + 4) << extra_bit_count;
+            return Ok(3 + base + extra_bits);
+        }
+        if symbol == 285 {
+            return Ok(258);
+        }
+        panic!("Unimplemented length symbol: {symbol}");
     }
 
     fn read_distance<R: io::Read>(&self, reader: &mut BitReader<R>) -> io::Result<u16> {
-        let base = reader.read_bits(5)?;
-        if base <= 3 {
-            return Ok((base + 1) as u16);
+        // Borrowed from https://github.com/nayuki/Simple-DEFLATE-decompressor/blob/2586b459a84f8918851a1078c2c0482b1b383fba/python/deflatedecompress.py#L456
+        let symbol = reader.read_bits::<u16>(5)?;
+        if symbol <= 3 {
+            return Ok(symbol + 1);
         }
-        println!("distance symbol: {base}");
-        let distance = match base {
-            4 => 5 + reader.read_bits(1)?,
-            5 => 7 + reader.read_bits(1)?,
-            6 => 9 + reader.read_bits(2)?,
-            7 => 13 + reader.read_bits(2)?,
-            _ => panic!("unimplemented base length: {base}"),
-        };
-        Ok(distance as u16)
+        if symbol <= 29 {
+            let extra_bit_count = symbol / 2 + 1;
+            let extra_bits = reader.read_bits::<u16>(extra_bit_count as u8)?;
+            let base = (symbol % 2 + 2) << extra_bit_count;
+            return Ok(1 + base + extra_bits);
+        }
+        panic!("Unimplemented distance symbol: {symbol}");
     }
 }
 
 impl<const N: usize> From<[(Code, u32); N]> for CodeToSymbolTable {
     fn from(pairs: [(Code, u32); N]) -> Self {
-        CodeToSymbolTable(HashMap::from(pairs))
+        Self(HashMap::from(pairs))
     }
 }
 
@@ -241,7 +232,7 @@ mod tests {
         assert_eq!(table.read_symbol(&mut reader)?, 0);
         assert_eq!(table.read_symbol(&mut reader)?, 1);
         assert_eq!(table.read_symbol(&mut reader)?, 2);
-        assert_eq!(reader.read_bits(3)?, 0b010);
+        assert_eq!(reader.read_bits::<u8>(3)?, 0b010);
         Ok(())
     }
 

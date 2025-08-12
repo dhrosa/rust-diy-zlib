@@ -1,4 +1,5 @@
 use std::io::{self, Read};
+use std::ops::{BitOrAssign, Shl};
 
 // Buffer of up to 8-bits for reading from a byte-based input at a sub-byte
 // granularity.
@@ -70,10 +71,13 @@ impl<R: io::Read> BitReader<R> {
         Ok(bit)
     }
 
-    pub fn read_bits(&mut self, count: u8) -> io::Result<u32> {
-        let mut value = 0;
+    pub fn read_bits<T>(&mut self, count: u8) -> io::Result<T>
+    where
+        T: Default + From<bool> + Shl<u8, Output = T> + BitOrAssign,
+    {
+        let mut value = T::default();
         for i in 0..count {
-            let bit = self.read_bit()? as u32;
+            let bit: T = self.read_bit()?.into();
             value |= bit << i;
         }
         Ok(value)
@@ -135,12 +139,12 @@ mod tests {
         let raw: &[u8] = &[0b11101101, 0b1101_1110];
         let mut reader = BitReader::new(raw);
 
-        assert_eq!(reader.read_bits(1)?, 0b1);
-        assert_eq!(reader.read_bits(2)?, 0b10);
-        assert_eq!(reader.read_bits(3)?, 0b101);
+        assert_eq!(reader.read_bits::<u8>(1)?, 0b1);
+        assert_eq!(reader.read_bits::<u8>(2)?, 0b10);
+        assert_eq!(reader.read_bits::<u8>(3)?, 0b101);
         // Cross byte boundary.
-        assert_eq!(reader.read_bits(4)?, 0b1011);
-        assert_eq!(reader.read_bits(5)?, 0b10111);
+        assert_eq!(reader.read_bits::<u8>(4)?, 0b1011);
+        assert_eq!(reader.read_bits::<u8>(5)?, 0b10111);
 
         Ok(())
     }
@@ -150,7 +154,7 @@ mod tests {
         let raw: &[u8] = &[0b1010_1010, 0b1100_1100, 0b1111_1110];
         let mut reader = BitReader::new(raw);
 
-        assert_eq!(reader.read_bits(4)?, 0b1010);
+        assert_eq!(reader.read_bits::<u8>(4)?, 0b1010);
 
         // Upper half of first-byte should be discarded.
         let mut out = [0u8];
@@ -158,7 +162,7 @@ mod tests {
         assert_eq!(out, [0b1100_1100]);
 
         // Start another partial read.
-        assert_eq!(reader.read_bits(4)?, 0b1110);
+        assert_eq!(reader.read_bits::<u8>(4)?, 0b1110);
 
         Ok(())
     }
