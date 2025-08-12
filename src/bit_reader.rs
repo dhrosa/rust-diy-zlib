@@ -33,45 +33,12 @@ impl BitBuffer {
     }
 }
 
-// Extention to io::Read that allows reading individual bits from the input
+// Extension to Read that allows reading individual bits from the input
 // stream.
-#[derive(Debug)]
-pub struct BitReader<R: io::Read> {
-    input: R,
-    bit_buffer: Option<BitBuffer>,
-}
+pub trait BitRead: Read {
+    fn read_bit(&mut self) -> io::Result<bool>;
 
-impl<R: io::Read> BitReader<R> {
-    pub fn new(input: R) -> Self {
-        BitReader {
-            input,
-            bit_buffer: None,
-        }
-    }
-
-    pub fn read_u8(&mut self) -> io::Result<u8> {
-        let mut bytes = [0u8];
-        self.read_exact(&mut bytes)?;
-        Ok(bytes[0])
-    }
-
-    pub fn read_u16(&mut self) -> io::Result<u16> {
-        let mut bytes = [0u8; 2];
-        self.read_exact(&mut bytes)?;
-        Ok(u16::from_le_bytes(bytes))
-    }
-
-    pub fn read_bit(&mut self) -> io::Result<bool> {
-        let buffer = match self.bit_buffer {
-            None => BitBuffer::new(self.read_u8()?),
-            Some(b) => b,
-        };
-        let bit: bool;
-        (self.bit_buffer, bit) = buffer.read_bit();
-        Ok(bit)
-    }
-
-    pub fn read_bits<T>(&mut self, count: u8) -> io::Result<T>
+    fn read_bits<T>(&mut self, count: u8) -> io::Result<T>
     where
         T: Default + From<bool> + Shl<u8, Output = T> + BitOrAssign,
     {
@@ -82,11 +49,50 @@ impl<R: io::Read> BitReader<R> {
         }
         Ok(value)
     }
+
+    fn read_u8(&mut self) -> io::Result<u8> {
+        let mut bytes = [0u8];
+        self.read_exact(&mut bytes)?;
+        Ok(bytes[0])
+    }
+
+    fn read_u16(&mut self) -> io::Result<u16> {
+        let mut bytes = [0u8; 2];
+        self.read_exact(&mut bytes)?;
+        Ok(u16::from_le_bytes(bytes))
+    }
 }
 
-// Pass-through implementation of io::Read that delegates to upstream reader.
+#[derive(Debug)]
+pub struct BitReader<R: Read> {
+    input: R,
+    bit_buffer: Option<BitBuffer>,
+}
+
+impl<R: Read> BitReader<R> {
+    pub fn new(input: R) -> Self {
+        BitReader {
+            input,
+            bit_buffer: None,
+        }
+    }
+}
+
+impl<R: Read> BitRead for BitReader<R> {
+    fn read_bit(&mut self) -> io::Result<bool> {
+        let buffer = match self.bit_buffer {
+            None => BitBuffer::new(self.read_u8()?),
+            Some(b) => b,
+        };
+        let bit: bool;
+        (self.bit_buffer, bit) = buffer.read_bit();
+        Ok(bit)
+    }
+}
+
+// Pass-through implementation of Read that delegates to upstream reader.
 // Any partially-read byte initially present is discarded.
-impl<R: io::Read> io::Read for BitReader<R> {
+impl<R: Read> Read for BitReader<R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         self.bit_buffer = None;
         self.input.read(buf)

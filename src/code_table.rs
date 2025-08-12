@@ -1,4 +1,4 @@
-use crate::bit_reader::BitReader;
+use crate::bit_reader::{BitRead, BitReader};
 use crate::bit_string::bit_string;
 use crate::code::Code;
 use crate::error::{InflateError, InflateResult};
@@ -87,7 +87,7 @@ impl CodeToSymbolTable {
         SymbolToCodeTable::fixed().inverse()
     }
 
-    fn read_symbol<R: io::Read>(&self, reader: &mut BitReader<R>) -> InflateResult<u32> {
+    fn read_symbol(&self, reader: &mut impl BitRead) -> InflateResult<u32> {
         let mut code = Code::default();
         loop {
             if let Some(&symbol) = self.0.get(&code) {
@@ -97,10 +97,7 @@ impl CodeToSymbolTable {
         }
     }
 
-    fn read_instruction<R: io::Read>(
-        &self,
-        reader: &mut BitReader<R>,
-    ) -> InflateResult<Instruction> {
+    fn read_instruction(&self, reader: &mut impl BitRead) -> InflateResult<Instruction> {
         let symbol = self.read_symbol(reader)? as u16;
         if symbol < 256 {
             return Ok(Instruction::Literal(symbol as u8));
@@ -113,11 +110,7 @@ impl CodeToSymbolTable {
         Ok(Instruction::BackReference { length, distance })
     }
 
-    fn read_length<R: io::Read>(
-        &self,
-        symbol: u16,
-        reader: &mut BitReader<R>,
-    ) -> InflateResult<u16> {
+    fn read_length(&self, symbol: u16, reader: &mut impl BitRead) -> InflateResult<u16> {
         // Borrowed from
         // https://github.com/nayuki/Simple-DEFLATE-decompressor/blob/2586b459a84f8918851a1078c2c0482b1b383fba/python/deflatedecompress.py#L439
         if symbol <= 264 {
@@ -135,7 +128,7 @@ impl CodeToSymbolTable {
         Err(InflateError::InvalidLengthSymbol(symbol))
     }
 
-    fn read_distance<R: io::Read>(&self, reader: &mut BitReader<R>) -> InflateResult<u16> {
+    fn read_distance(&self, reader: &mut impl BitRead) -> InflateResult<u16> {
         // Borrowed from https://github.com/nayuki/Simple-DEFLATE-decompressor/blob/2586b459a84f8918851a1078c2c0482b1b383fba/python/deflatedecompress.py#L456
         let symbol = reader.read_bits::<u16>(5)?;
         if symbol <= 3 {

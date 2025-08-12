@@ -7,7 +7,7 @@ pub mod code_table;
 mod error;
 mod lz77;
 
-use crate::bit_reader::BitReader;
+use crate::bit_reader::{BitRead, BitReader};
 use crate::error::{InflateError, InflateResult};
 
 use std::io::{self, Read};
