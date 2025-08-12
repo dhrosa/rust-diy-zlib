@@ -10,6 +10,8 @@ pub enum InflateError {
     FlagCheckMismatch(u16),
     UnimplementedBlockType(u8),
     LengthComplementMismatch(u16, u16),
+    InvalidLengthSymbol(u16),
+    InvalidDistanceSymbol(u8),
 }
 
 impl From<io::Error> for InflateError {
@@ -33,6 +35,8 @@ impl fmt::Display for InflateError {
                 "Corrupted block length. Length: {}, Inverse length: {}",
                 length, inverse_length
             ),
+            InvalidLengthSymbol(s) => write!(f, "Invalid run length symbol: {}", s),
+            InvalidDistanceSymbol(s) => write!(f, "Invaid distance symbol: {}", s),
         }
     }
 }

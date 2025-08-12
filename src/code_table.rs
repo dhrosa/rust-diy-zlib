@@ -1,6 +1,7 @@
 use crate::bit_reader::BitReader;
 use crate::bit_string::bit_string;
 use crate::code::Code;
+use crate::error::{InflateError, InflateResult};
 use crate::lz77::Instruction;
 use std::collections::HashMap;
 use std::io;
@@ -86,7 +87,7 @@ impl CodeToSymbolTable {
         SymbolToCodeTable::fixed().inverse()
     }
 
-    fn read_symbol<R: io::Read>(&self, reader: &mut BitReader<R>) -> io::Result<u32> {
+    fn read_symbol<R: io::Read>(&self, reader: &mut BitReader<R>) -> InflateResult<u32> {
         let mut code = Code::default();
         loop {
             if let Some(&symbol) = self.0.get(&code) {
@@ -96,7 +97,10 @@ impl CodeToSymbolTable {
         }
     }
 
-    fn read_instruction<R: io::Read>(&self, reader: &mut BitReader<R>) -> io::Result<Instruction> {
+    fn read_instruction<R: io::Read>(
+        &self,
+        reader: &mut BitReader<R>,
+    ) -> InflateResult<Instruction> {
         let symbol = self.read_symbol(reader)? as u16;
         if symbol < 256 {
             return Ok(Instruction::Literal(symbol as u8));
@@ -109,7 +113,11 @@ impl CodeToSymbolTable {
         Ok(Instruction::BackReference { length, distance })
     }
 
-    fn read_length<R: io::Read>(&self, symbol: u16, reader: &mut BitReader<R>) -> io::Result<u16> {
+    fn read_length<R: io::Read>(
+        &self,
+        symbol: u16,
+        reader: &mut BitReader<R>,
+    ) -> InflateResult<u16> {
         // Borrowed from
         // https://github.com/nayuki/Simple-DEFLATE-decompressor/blob/2586b459a84f8918851a1078c2c0482b1b383fba/python/deflatedecompress.py#L439
         if symbol <= 264 {
@@ -124,10 +132,10 @@ impl CodeToSymbolTable {
         if symbol == 285 {
             return Ok(258);
         }
-        panic!("Unimplemented length symbol: {symbol}");
+        Err(InflateError::InvalidLengthSymbol(symbol))
     }
 
-    fn read_distance<R: io::Read>(&self, reader: &mut BitReader<R>) -> io::Result<u16> {
+    fn read_distance<R: io::Read>(&self, reader: &mut BitReader<R>) -> InflateResult<u16> {
         // Borrowed from https://github.com/nayuki/Simple-DEFLATE-decompressor/blob/2586b459a84f8918851a1078c2c0482b1b383fba/python/deflatedecompress.py#L456
         let symbol = reader.read_bits::<u16>(5)?;
         if symbol <= 3 {
@@ -139,7 +147,7 @@ impl CodeToSymbolTable {
             let base = (symbol % 2 + 2) << extra_bit_count;
             return Ok(1 + base + extra_bits);
         }
-        panic!("Unimplemented distance symbol: {symbol}");
+        Err(InflateError::InvalidDistanceSymbol(symbol as u8))
     }
 }
 
@@ -221,7 +229,7 @@ mod tests {
     }
 
     #[test]
-    fn test_read_code() -> io::Result<()> {
+    fn test_read_code() -> InflateResult<()> {
         let table = CodeToSymbolTable::from([
             (Code::from("0"), 0),
             (Code::from("10"), 1),
@@ -237,7 +245,7 @@ mod tests {
     }
 
     #[test]
-    fn test_read_literal() -> io::Result<()> {
+    fn test_read_literal() -> InflateResult<()> {
         // 0 is 8-bit code: 00110000
         // 144 is 9-bit code: 110010000
         let raw = bit_string("0000 1100 0001 0011 0");
@@ -255,7 +263,7 @@ mod tests {
     }
 
     #[test]
-    fn test_end_of_block() -> io::Result<()> {
+    fn test_end_of_block() -> InflateResult<()> {
         // end of block is 7-bit code: 000 0000.
         let raw = bit_string("1000 0000");
         let mut reader = BitReader::new(raw.as_slice());
@@ -268,7 +276,7 @@ mod tests {
     }
 
     #[test]
-    fn test_back_reference() -> io::Result<()> {
+    fn test_back_reference() -> InflateResult<()> {
         use super::Instruction::*;
 
         let raw = bit_string("00110000 00000000 00000000");
