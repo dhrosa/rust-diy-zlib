@@ -195,6 +195,22 @@ mod tests {
     }
 
     #[test]
+    fn test_empty_codes() {
+        let code_lengths = &[2, 0, 1, 0, 3, 3];
+        assert_eq!(
+            SymbolToCodeTable::from_code_lengths(code_lengths),
+            SymbolToCodeTable(vec![
+                Code::from("10"),
+                Code::default(),
+                Code::from("0"),
+                Code::default(),
+                Code::from("110"),
+                Code::from("111"),
+            ])
+        );
+    }
+
+    #[test]
     fn test_fixed_table() {
         let SymbolToCodeTable(fixed) = SymbolToCodeTable::fixed();
         assert_eq!(fixed[0], Code::from("00110000"));
