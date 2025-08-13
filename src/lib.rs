@@ -2,6 +2,7 @@
 
 mod bit_reader;
 mod bit_string;
+mod block_decoder;
 mod code;
 pub mod code_table;
 mod error;

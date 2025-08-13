@@ -2,7 +2,6 @@ use crate::bit_reader::{BitRead, BitReader};
 use crate::bit_string::bit_string;
 use crate::code::Code;
 use crate::error::{InflateError, InflateResult};
-use crate::lz77::Instruction;
 use std::collections::HashMap;
 use std::io;
 
@@ -63,11 +62,15 @@ impl SymbolToCodeTable {
         SymbolToCodeTable(codes)
     }
 
-    pub fn fixed() -> Self {
+    pub fn fixed_ll() -> Self {
         let mut code_lengths: [CodeLength; 288] = [8; 288];
         code_lengths[144..=255].fill(9);
         code_lengths[256..=279].fill(7);
         Self::from_code_lengths(&code_lengths)
+    }
+
+    pub fn fixed_distance() -> Self {
+        Self::from_code_lengths(&[5; 32])
     }
 
     pub fn inverse(&self) -> CodeToSymbolTable {
@@ -83,11 +86,15 @@ impl SymbolToCodeTable {
 pub struct CodeToSymbolTable(HashMap<Code, u32>);
 
 impl CodeToSymbolTable {
-    fn fixed() -> Self {
-        SymbolToCodeTable::fixed().inverse()
+    pub fn fixed_ll() -> Self {
+        SymbolToCodeTable::fixed_ll().inverse()
     }
 
-    fn read_symbol(&self, reader: &mut impl BitRead) -> InflateResult<u32> {
+    pub fn fixed_distance() -> Self {
+        SymbolToCodeTable::fixed_distance().inverse()
+    }
+
+    pub fn read_symbol(&self, reader: &mut impl BitRead) -> InflateResult<u32> {
         let mut code = Code::default();
         loop {
             if let Some(&symbol) = self.0.get(&code) {
@@ -95,52 +102,6 @@ impl CodeToSymbolTable {
             }
             code = code.append_bit(reader.read_bit()?);
         }
-    }
-
-    fn read_instruction(&self, reader: &mut impl BitRead) -> InflateResult<Instruction> {
-        let symbol = self.read_symbol(reader)? as u16;
-        if symbol < 256 {
-            return Ok(Instruction::Literal(symbol as u8));
-        }
-        if symbol == 256 {
-            return Ok(Instruction::EndOfBlock);
-        }
-        let length = self.read_length(symbol, reader)?;
-        let distance = self.read_distance(reader)?;
-        Ok(Instruction::BackReference { length, distance })
-    }
-
-    fn read_length(&self, symbol: u16, reader: &mut impl BitRead) -> InflateResult<u16> {
-        // Borrowed from
-        // https://github.com/nayuki/Simple-DEFLATE-decompressor/blob/2586b459a84f8918851a1078c2c0482b1b383fba/python/deflatedecompress.py#L439
-        if symbol <= 264 {
-            return Ok(symbol - 254);
-        }
-        if symbol <= 284 {
-            let extra_bit_count = (symbol - 261) / 4;
-            let extra_bits = reader.read_bits::<u16>(extra_bit_count as u8)?;
-            let base = ((symbol - 265) % 4 + 4) << extra_bit_count;
-            return Ok(3 + base + extra_bits);
-        }
-        if symbol == 285 {
-            return Ok(258);
-        }
-        Err(InflateError::InvalidLengthSymbol(symbol))
-    }
-
-    fn read_distance(&self, reader: &mut impl BitRead) -> InflateResult<u16> {
-        // Borrowed from https://github.com/nayuki/Simple-DEFLATE-decompressor/blob/2586b459a84f8918851a1078c2c0482b1b383fba/python/deflatedecompress.py#L456
-        let symbol = reader.read_bits::<u16>(5)?;
-        if symbol <= 3 {
-            return Ok(symbol + 1);
-        }
-        if symbol <= 29 {
-            let extra_bit_count = symbol / 2 + 1;
-            let extra_bits = reader.read_bits::<u16>(extra_bit_count as u8)?;
-            let base = (symbol % 2 + 2) << extra_bit_count;
-            return Ok(1 + base + extra_bits);
-        }
-        Err(InflateError::InvalidDistanceSymbol(symbol as u8))
     }
 }
 
@@ -211,8 +172,8 @@ mod tests {
     }
 
     #[test]
-    fn test_fixed_table() {
-        let SymbolToCodeTable(fixed) = SymbolToCodeTable::fixed();
+    fn test_fixed_ll_table() {
+        let SymbolToCodeTable(fixed) = SymbolToCodeTable::fixed_ll();
         assert_eq!(fixed[0], Code::from("00110000"));
         assert_eq!(fixed[143], Code::from("10111111"));
         assert_eq!(fixed[144], Code::from("110010000"));
@@ -221,6 +182,16 @@ mod tests {
         assert_eq!(fixed[279], Code::from("0010111"));
         assert_eq!(fixed[280], Code::from("11000000"));
         assert_eq!(fixed[287], Code::from("11000111"));
+    }
+
+    #[test]
+    fn test_fixed_distance_table() {
+        let SymbolToCodeTable(fixed) = SymbolToCodeTable::fixed_distance();
+        assert_eq!(fixed[0], Code::from("00000"));
+        assert_eq!(fixed[3], Code::from("00011"));
+        assert_eq!(fixed[9], Code::from("01001"));
+        assert_eq!(fixed[27], Code::from("11011"));
+        assert_eq!(fixed[31], Code::from("11111"));
     }
 
     #[test]
@@ -250,55 +221,6 @@ mod tests {
         assert_eq!(table.read_symbol(&mut reader)?, 1);
         assert_eq!(table.read_symbol(&mut reader)?, 2);
         assert_eq!(reader.read_bits::<u8>(3)?, 0b010);
-        Ok(())
-    }
-
-    #[test]
-    fn test_read_literal() -> InflateResult<()> {
-        // 0 is 8-bit code: 00110000
-        // 144 is 9-bit code: 110010000
-        let raw = bit_string("0000 1100 0001 0011 0");
-        let mut reader = BitReader::new(raw.as_slice());
-        let table = CodeToSymbolTable::fixed();
-        assert_eq!(
-            table.read_instruction(&mut reader)?,
-            Instruction::Literal(0)
-        );
-        assert_eq!(
-            table.read_instruction(&mut reader)?,
-            Instruction::Literal(144)
-        );
-        Ok(())
-    }
-
-    #[test]
-    fn test_end_of_block() -> InflateResult<()> {
-        // end of block is 7-bit code: 000 0000.
-        let raw = bit_string("1000 0000");
-        let mut reader = BitReader::new(raw.as_slice());
-        let table = CodeToSymbolTable::fixed();
-        assert_eq!(
-            table.read_instruction(&mut reader)?,
-            Instruction::EndOfBlock,
-        );
-        Ok(())
-    }
-
-    #[test]
-    fn test_back_reference() -> InflateResult<()> {
-        use super::Instruction::*;
-
-        let raw = bit_string("00110000 00000000 00000000");
-        let mut reader = BitReader::new(raw.as_slice());
-        let table = CodeToSymbolTable::fixed();
-        assert_eq!(
-            table.read_instruction(&mut reader)?,
-            BackReference {
-                length: 8,
-                distance: 1
-            }
-        );
-
         Ok(())
     }
 }
