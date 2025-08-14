@@ -5,7 +5,7 @@ use crate::error::{InflateError, InflateResult};
 use std::collections::HashMap;
 use std::io;
 
-type CodeLength = u8;
+pub type CodeLength = u8;
 
 // Each index is a code length, each value is the number of code lengths of that
 // value. The [0] value is always 0.
@@ -92,6 +92,10 @@ impl CodeToSymbolTable {
 
     pub fn fixed_distance() -> Self {
         SymbolToCodeTable::fixed_distance().inverse()
+    }
+
+    pub fn from_code_lengths(code_lengths: &[CodeLength]) -> Self {
+        SymbolToCodeTable::from_code_lengths(code_lengths).inverse()
     }
 
     pub fn read_symbol(&self, reader: &mut impl BitRead) -> InflateResult<u32> {

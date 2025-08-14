@@ -1,5 +1,5 @@
 use crate::bit_reader::BitRead;
-use crate::code_table::CodeToSymbolTable;
+use crate::code_table::{CodeLength, CodeToSymbolTable};
 use crate::error::{InflateError, InflateResult};
 use crate::lz77::Instruction;
 
@@ -9,13 +9,80 @@ struct BlockDecoder<'a, R: BitRead> {
     distance_table: CodeToSymbolTable,
 }
 
+fn push_repeated<T: Copy>(v: &mut Vec<T>, value: T, count: usize) {
+    for _ in 0..count {
+        v.push(value);
+    }
+}
+
 impl<'a, R: BitRead> BlockDecoder<'a, R> {
+    // Decoder for block type 1 (fixed codes).
     pub fn new_fixed(reader: &'a mut R) -> Self {
         Self {
             reader,
             ll_table: CodeToSymbolTable::fixed_ll(),
             distance_table: CodeToSymbolTable::fixed_distance(),
         }
+    }
+
+    // Decoder for block type 2 (dynamic codes).
+    pub fn new_dynamic(reader: &'a mut R) -> InflateResult<Self> {
+        let ll_count = reader.read_bits::<usize>(5)? + 257;
+        let distance_count = reader.read_bits::<usize>(5)? + 1;
+        let cl_count = reader.read_bits::<usize>(4)? + 4;
+
+        // Construct CL table.
+        let cl_table: CodeToSymbolTable;
+        {
+            let mut cl_code_lengths = [0; 19];
+            let cl_indexes = [
+                16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15,
+            ];
+            for i in 0..cl_count {
+                let cl_code_length = reader.read_bits::<u8>(3)?;
+                let index = cl_indexes[i];
+                cl_code_lengths[index] = cl_code_length;
+            }
+            cl_table = CodeToSymbolTable::from_code_lengths(&cl_code_lengths);
+        }
+
+        // Use CL table to decode LL and distance code lengths.
+        let mut code_lengths = Vec::<CodeLength>::new();
+        while code_lengths.len() < ll_count + distance_count {
+            let symbol = cl_table.read_symbol(reader)?;
+            if symbol <= 15 {
+                // Verbatim length
+                code_lengths.push(symbol as CodeLength);
+            } else if symbol == 16 {
+                // Repeat previous length
+                let count = 3 + reader.read_bits::<usize>(2)?;
+                if let Some(&length) = code_lengths.last() {
+                    push_repeated(&mut code_lengths, length, count);
+                } else {
+                    return Err(InflateError::DynamicCodeMalformed);
+                }
+            } else if symbol == 17 {
+                let count = 3 + reader.read_bits::<usize>(3)?;
+                push_repeated(&mut code_lengths, 0, count);
+            } else if symbol == 18 {
+                let count = 11 + reader.read_bits::<usize>(7)?;
+                push_repeated(&mut code_lengths, 0, count);
+            }
+        }
+
+        let mut ll_lengths = [0; 288];
+        for i in 0..ll_count {
+            ll_lengths[i] = code_lengths[i];
+        }
+        let mut distance_lengths = [0; 32];
+        for i in 0..distance_count {
+            distance_lengths[i] = code_lengths[ll_count + i];
+        }
+        Ok(Self {
+            reader,
+            ll_table: CodeToSymbolTable::from_code_lengths(&ll_lengths),
+            distance_table: CodeToSymbolTable::from_code_lengths(&distance_lengths),
+        })
     }
 
     pub fn next(&mut self) -> InflateResult<Instruction> {

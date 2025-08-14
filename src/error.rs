@@ -12,6 +12,7 @@ pub enum InflateError {
     LengthComplementMismatch(u16, u16),
     InvalidLengthSymbol(u16),
     InvalidDistanceSymbol(u8),
+    DynamicCodeMalformed,
 }
 
 impl From<io::Error> for InflateError {
@@ -37,6 +38,9 @@ impl fmt::Display for InflateError {
             ),
             InvalidLengthSymbol(s) => write!(f, "Invalid run length symbol: {}", s),
             InvalidDistanceSymbol(s) => write!(f, "Invaid distance symbol: {}", s),
+            DynamicCodeMalformed => {
+                write!(f, "First code length for dynamic code cannot be a repeat.")
+            }
         }
     }
 }
