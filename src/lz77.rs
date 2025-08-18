@@ -8,7 +8,7 @@ pub enum Instruction {
 }
 
 #[derive(Debug)]
-struct History {
+pub struct History {
     buffer: Vec<u8>,
     start: usize,
     length: usize,

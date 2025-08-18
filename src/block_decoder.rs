@@ -3,7 +3,7 @@ use crate::code_table::{CodeLength, CodeToSymbolTable};
 use crate::error::{InflateError, InflateResult};
 use crate::lz77::Instruction;
 
-struct BlockDecoder<'a, R: BitRead> {
+pub struct BlockDecoder<'a, R: BitRead> {
     reader: &'a mut R,
     ll_table: CodeToSymbolTable,
     distance_table: CodeToSymbolTable,
@@ -145,6 +145,8 @@ mod tests {
         let raw = bit_string("0000 1100 0001 0011 0");
         let mut reader = BitReader::new(raw.as_slice());
         let mut decoder = BlockDecoder::new_fixed(&mut reader);
+        assert_eq!(decoder.next()?, Instruction::Literal(0));
+        assert_eq!(decoder.next()?, Instruction::Literal(144));
         Ok(())
     }
 

@@ -1,12 +1,12 @@
 #![feature(assert_matches)]
 
 mod bit_reader;
-mod bit_string;
-mod block_decoder;
+pub mod bit_string;
+pub mod block_decoder;
 mod code;
 pub mod code_table;
 mod error;
-mod lz77;
+pub mod lz77;
 
 use crate::bit_reader::{BitRead, BitReader};
 use crate::error::{InflateError, InflateResult};

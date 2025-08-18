@@ -1,9 +1,7 @@
-use crate::bit_reader::{BitRead, BitReader};
-use crate::bit_string::bit_string;
+use crate::bit_reader::BitRead;
 use crate::code::Code;
-use crate::error::{InflateError, InflateResult};
+use crate::error::InflateResult;
 use std::collections::HashMap;
-use std::io;
 
 pub type CodeLength = u8;
 
@@ -118,6 +116,7 @@ impl<const N: usize> From<[(Code, u32); N]> for CodeToSymbolTable {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bit_reader::BitReader;
 
     #[test]
     fn test_code_length_counts() {
